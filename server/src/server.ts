@@ -2,6 +2,8 @@
  * Copyright (c) Microsoft Corporation. All rights reserved.
  * Licensed under the MIT License. See License.txt in the project root for license information.
  * ------------------------------------------------------------------------------------------ */
+import { readFileSync } from 'fs';
+import * as path from 'path';
 import {
   CompletionItem,
   CompletionItemKind,
@@ -28,6 +30,24 @@ const documents: TextDocuments<TextDocument> = new TextDocuments(TextDocument);
 let hasConfigurationCapability = false;
 let hasWorkspaceFolderCapability = false;
 let hasDiagnosticRelatedInformationCapability = false;
+
+let memory: WebAssembly.Memory;
+let alloc_wasm: (len: number) => number;
+let destroy_wasm: (ptr: number) => void;
+let parse_wasm: (ptr: number, len: number) => number;
+
+const encoder = new TextEncoder();
+
+const initWasm = () => {
+  const filePath = path.resolve(__dirname, '../../zig-out/lib/parser.wasm');
+  const bytes = readFileSync(filePath);
+  const module = new WebAssembly.Module(bytes);
+  const instance = new WebAssembly.Instance(module, {});
+  memory = instance.exports.memory as WebAssembly.Memory;
+  alloc_wasm = instance.exports.alloc as (len: number) => number;
+  destroy_wasm = instance.exports.destroy as (ptr: number) => void;
+  parse_wasm = instance.exports.parse as (ptr: number, len: number) => number;
+};
 
 connection.onInitialize((params: InitializeParams) => {
   const capabilities = params.capabilities;
@@ -62,6 +82,9 @@ connection.onInitialize((params: InitializeParams) => {
       },
     };
   }
+
+  initWasm();
+
   return result;
 });
 
@@ -131,12 +154,31 @@ documents.onDidChangeContent((change) => {
   validateTextDocument(change.document);
 });
 
+const alloc = (data: Uint8Array) => {
+  if (data.length === 0) return 0;
+  const ptr = alloc_wasm(data.length);
+  const mem = new Uint8Array(memory.buffer, ptr, data.length);
+  mem.set(data);
+  return ptr;
+};
+
+const parse = (source: string) => {
+  const encodedSource = encoder.encode(source);
+  const ptr = alloc(encodedSource);
+  return parse_wasm(ptr, encodedSource.length);
+};
+
 async function validateTextDocument(textDocument: TextDocument): Promise<void> {
   // In this simple example we get the settings for every validate run.
   const settings = await getDocumentSettings(textDocument.uri);
 
   // The validator creates diagnostics for all uppercase words length 2 and more
   const text = textDocument.getText();
+
+  const result = parse(text);
+  destroy_wasm(result);
+  console.log(result, memory.buffer.byteLength);
+
   const pattern = /\b[A-Z]{2,}\b/g;
   let m: RegExpExecArray | null;
 
