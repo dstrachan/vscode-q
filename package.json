@@ -47,10 +47,12 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",
-    "compile": "tsc -b",
-    "watch": "tsc -b -w",
+    "compile:typescript": "tsc -b",
+    "compile:zig": "zig build",
+    "compile": "npm run compile:typescript && npm run compile:zig",
+    "watch": "npm run compile:zig && tsc -b -w",
     "lint:fix": "eslint ./client/src ./server/src --ext .js,.ts --quiet --fix",
-    "lint:format": "prettier --loglevel warn --write \"./**/*.{js,ts,md,json}\"",
+    "lint:format": "prettier --loglevel warn --write \"./**/*.{js,ts,md,json}\" && zig fmt ./parser/src",
     "lint": "npm run lint:format && npm run lint:fix",
     "postinstall": "cd client && npm install && cd ../server && npm install && cd ..",
     "test": "sh ./scripts/e2e.sh"
