@@ -37,12 +37,18 @@ let destroy_wasm: (ptr: number) => void;
 let parse_wasm: (ptr: number, len: number) => number;
 
 const encoder = new TextEncoder();
+const decoder = new TextDecoder();
+
+const print = (ptr: number, len: number) => {
+  const mem = new Uint8Array(memory.buffer, ptr, len);
+  console.log(decoder.decode(mem));
+};
 
 const initWasm = () => {
   const filePath = path.resolve(__dirname, '../../zig-out/lib/parser.wasm');
   const bytes = readFileSync(filePath);
   const module = new WebAssembly.Module(bytes);
-  const instance = new WebAssembly.Instance(module, {});
+  const instance = new WebAssembly.Instance(module, { env: { print } });
   memory = instance.exports.memory as WebAssembly.Memory;
   alloc_wasm = instance.exports.alloc as (len: number) => number;
   destroy_wasm = instance.exports.destroy as (ptr: number) => void;
@@ -162,10 +168,105 @@ const alloc = (data: Uint8Array) => {
   return ptr;
 };
 
+const parseNumber = (ptr: number) => {
+  const view = new DataView(memory.buffer, ptr, 4);
+  return view.getUint32(0, true);
+};
+
+const parseString = (ptr: number) => {
+  const view = new DataView(memory.buffer, ptr, 8);
+  const strPtr = view.getUint32(0, true);
+  const len = view.getUint32(4, true);
+  const mem = new Uint8Array(memory.buffer, strPtr, len);
+  return decoder.decode(mem);
+};
+
+type Token = {
+  tokenType: string;
+  lexeme: string;
+  line: number;
+};
+
+enum TokenType {
+  // Punctuation.
+  token_left_paren,
+  token_right_paren,
+  token_left_brace,
+  token_right_brace,
+  token_left_bracket,
+  token_right_bracket,
+  token_semicolon,
+  token_colon,
+  token_double_colon,
+
+  // Verbs.
+  token_plus,
+  token_minus,
+  token_star,
+  token_percent,
+  token_bang,
+  token_ampersand,
+  token_pipe,
+  token_less,
+  token_greater,
+  token_equal,
+  token_tilde,
+  token_comma,
+  token_caret,
+  token_hash,
+  token_underscore,
+  token_dollar,
+  token_question,
+  token_at,
+  token_dot,
+
+  // Literals.
+  token_bool,
+  token_int,
+  token_float,
+  token_char,
+  token_string,
+  token_symbol,
+  token_identifier,
+
+  token_error,
+  token_eof,
+}
+
+const parseTokens = (ptr: number, len: number) => {
+  const tokens = new Array<Token>(len);
+  for (let i = 0; i < len; i++) {
+    const tokenType = TokenType[parseNumber(ptr)];
+    const lexeme = parseString(ptr + 4);
+    const line = parseNumber(ptr + 12);
+    tokens[i] = {
+      tokenType,
+      lexeme,
+      line,
+    };
+    console.log(tokens[i]);
+    ptr += 16;
+  }
+  return tokens;
+};
+
+const parseTokenResult = (ptr: number) => {
+  const view = new DataView(memory.buffer, ptr, 8);
+  const tokensPtr = view.getUint32(0, true);
+  const len = view.getUint32(4, true);
+
+  return {
+    tokens: parseTokens(tokensPtr, len),
+  };
+};
+
 const parse = (source: string) => {
   const encodedSource = encoder.encode(source);
-  const ptr = alloc(encodedSource);
-  return parse_wasm(ptr, encodedSource.length);
+  const sourcePtr = alloc(encodedSource);
+  const ptr = parse_wasm(sourcePtr, encodedSource.length);
+  const result = parseTokenResult(ptr);
+  destroy_wasm(ptr);
+  return result;
 };
 
 async function validateTextDocument(textDocument: TextDocument): Promise<void> {
@@ -176,7 +277,6 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
   const text = textDocument.getText();
 
   const result = parse(text);
-  destroy_wasm(result);
   console.log(result, memory.buffer.byteLength);
 
   const pattern = /\b[A-Z]{2,}\b/g;
