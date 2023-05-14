@@ -1,5 +1,7 @@
 const std = @import("std");
 
+const utils_mod = @import("./utils.zig");
+
 const String = @import("string.zig").String;
 
 pub const Token = struct {
@@ -50,6 +52,7 @@ pub const TokenType = enum(u32) {
     token_symbol,
     token_identifier,
 
+    token_whitespace,
     token_error,
     token_eof,
 };
@@ -71,10 +74,10 @@ pub fn init(source: []const u8) Self {
 }
 
 pub fn scanToken(self: *Self) ?Token {
-    self.skipWhitespace();
     self.start = self.iterator.i;
 
     const c = self.advance() orelse return null;
+    if (isWhitespace(c)) return self.whitespace(c);
     if (isAlpha(c)) return self.identifier();
 
     return self.errorToken("Unexpected character.");
@@ -86,24 +89,23 @@ fn advance(self: *Self) ?u8 {
     return slice[0];
 }
 
-fn skipWhitespace(self: *Self) void {
-    while (self.peek()) |c| {
-        switch (c) {
-            ' ', '\r', '\t' => self.iterator.i += 1,
+fn whitespace(self: *Self, c: u8) Token {
+    if (c == '\n') self.line += 1;
+    while (true) {
+        switch (self.peek()) {
+            ' ', '\r', '\t' => _ = self.advance(),
             '\n' => {
                 self.line += 1;
-                self.iterator.i += 1;
+                _ = self.advance();
             },
-            else => return,
+            else => break,
         }
     }
+    return self.makeToken(.token_whitespace);
 }
 
 fn identifier(self: *Self) Token {
-    while (self.peek()) |c| {
-        if (!isAlpha(c) and !isDigit(c)) break;
-        _ = self.advance();
-    }
+    while (isAlpha(self.peek()) or isDigit(self.peek())) _ = self.advance();
     return self.makeToken(.token_identifier);
 }
 
@@ -111,15 +113,15 @@ fn isAtEnd(self: *Self) bool {
     return self.iterator.i >= self.iterator.bytes.len;
 }
 
-fn peek(self: *Self) ?u8 {
+fn peek(self: *Self) u8 {
     const slice = self.iterator.peek(1);
-    if (slice.len != 1) return null;
+    if (slice.len != 1) return 0;
     return slice[0];
 }
 
-fn peekNext(self: *Self) ?u8 {
+fn peekNext(self: *Self) u8 {
     const slice = self.iterator.peek(2);
-    if (slice.len != 2) return null;
+    if (slice.len != 2) return 0;
     return slice[1];
 }
 
@@ -139,6 +141,13 @@ fn token(self: *Self, token_type: TokenType, lexeme: []const u8) Token {
             .len = lexeme.len,
         },
         .line = self.line,
+    };
+}
+
+fn isWhitespace(c: u8) bool {
+    return switch (c) {
+        ' ', '\r', '\t', '\n' => true,
+        else => false,
     };
 }
 

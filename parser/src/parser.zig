@@ -6,8 +6,6 @@ const Utf8View = std.unicode.Utf8View;
 
 const Scanner = @import("./scanner.zig");
 
-extern fn print(ptr: [*]const u8, len: usize) void;
-
 const allocator = Allocator{
     .ptr = undefined,
     .vtable = &WasmAllocator.vtable,

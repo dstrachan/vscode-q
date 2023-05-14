@@ -229,6 +229,7 @@ enum TokenType {
   token_symbol,
   token_identifier,
 
+  token_whitespace,
   token_error,
   token_eof,
 }
