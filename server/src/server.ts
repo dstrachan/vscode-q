@@ -184,7 +184,9 @@ const parseString = (ptr: number) => {
 type Token = {
   tokenType: string;
   lexeme: string;
+  errorMessage: string;
   line: number;
+  char: number;
 };
 
 enum TokenType {
@@ -229,7 +231,17 @@ enum TokenType {
   token_symbol,
   token_identifier,
 
+  // Adverbs.
+  token_apostrophe,
+  token_apostrophe_colon,
+  token_slash,
+  token_slash_colon,
+  token_backslash,
+  token_backslash_colon,
+
+  token_system,
   token_whitespace,
+  token_comment,
   token_error,
   token_eof,
 }
@@ -239,14 +251,17 @@ const parseTokens = (ptr: number, len: number) => {
   for (let i = 0; i < len; i++) {
     const tokenType = TokenType[parseNumber(ptr)];
     const lexeme = parseString(ptr + 4);
-    const line = parseNumber(ptr + 12);
+    const errorMessage = parseString(ptr + 12);
+    const line = parseNumber(ptr + 20);
+    const char = parseNumber(ptr + 24);
     tokens[i] = {
       tokenType,
       lexeme,
+      errorMessage,
       line,
+      char,
     };
-    console.log(tokens[i]);
-    ptr += 16;
+    ptr += 28;
   }
   return tokens;
 };
@@ -277,8 +292,17 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
   // The validator creates diagnostics for all uppercase words length 2 and more
   const text = textDocument.getText();
 
+  const start = performance.now();
   const result = parse(text);
-  console.log(result, memory.buffer.byteLength);
+  const duration = performance.now() - start;
+  console.log(result, `Duration: ${duration.toFixed(2)} ms`);
+
+  for (let i = 0; i < result.tokens.length; i++) {
+    const token = result.tokens[i];
+    if (token.tokenType === TokenType[TokenType.token_error]) {
+      console.log(token);
+    }
+  }
 
   const pattern = /\b[A-Z]{2,}\b/g;
   let m: RegExpExecArray | null;
