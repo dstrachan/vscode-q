@@ -72,6 +72,8 @@ pub const TokenType = enum(u32) {
 const Self = @This();
 
 start: usize,
+start_line: u32,
+start_char: u32,
 line: u32,
 char: u32,
 prev_token: Token,
@@ -82,6 +84,8 @@ pub fn init(source: []const u8) Self {
     const view = std.unicode.Utf8View.init(source) catch @panic("Failed to create Utf8View");
     return Self{
         .start = 0,
+        .start_line = 0,
+        .start_char = 0,
         .line = 1,
         .char = 1,
         .prev_token = .{
@@ -97,12 +101,14 @@ pub fn init(source: []const u8) Self {
 
 pub fn scanToken(self: *Self) ?Token {
     self.start = self.iterator.i;
+    self.start_line = self.line;
+    self.start_char = self.char;
 
     const c = self.advance() orelse return null;
     if (isWhitespace(c)) return self.whitespace(c);
 
     if (c == '/') {
-        if (self.char == 1) {
+        if (self.start_char == 1) {
             const next = self.peek();
             if (next == 0 or next == '\n') return self.blockComment(c);
             return self.comment();
@@ -111,7 +117,7 @@ pub fn scanToken(self: *Self) ?Token {
         if (self.prev_token.token_type == .token_whitespace) return self.comment();
     }
 
-    if (c == '\\' and self.char == 1) {
+    if (c == '\\' and self.start_char == 1) {
         const next = self.peek();
         if (next == 0 or next == '\n') return self.trailingComment();
         return self.system();
@@ -182,6 +188,12 @@ pub fn scanToken(self: *Self) ?Token {
 fn advance(self: *Self) ?u8 {
     const slice = self.iterator.nextCodepointSlice() orelse return null;
     if (slice.len > 1) return null;
+    if (slice[0] == '\n') {
+        self.line += 1;
+        self.char = 1;
+    } else {
+        self.char += 1;
+    }
     return slice[0];
 }
 
@@ -196,7 +208,8 @@ fn match(self: *Self, expected: u8) bool {
 fn comment(self: *Self) Token {
     var c = self.peek();
     while (c != 0 and c != '\n') : (c = self.peek()) _ = self.advance();
-    return self.makeNewlineToken(.token_comment);
+    if (c == '\n') _ = self.advance();
+    return self.makeToken(.token_comment);
 }
 
 fn blockComment(self: *Self, c: u8) Token {
@@ -207,7 +220,6 @@ fn blockComment(self: *Self, c: u8) Token {
             _ = self.advance();
             break;
         }
-        if (next == '\n') self.line += 1; // TODO: Increment after token creation
 
         _ = self.advance();
         prev = next;
@@ -218,19 +230,21 @@ fn blockComment(self: *Self, c: u8) Token {
 fn trailingComment(self: *Self) Token {
     var c = self.peek();
     while (c != 0) : (c = self.peek()) {
-        if (c == '\n') self.line += 1; // TODO: Increment after token creation
         _ = self.advance();
     }
     return self.makeToken(.token_comment);
 }
 
 fn whitespace(self: *Self, c: u8) Token {
-    if (c == '\n') return self.makeNewlineToken(.token_whitespace);
+    if (c == '\n') return self.makeToken(.token_whitespace);
 
     while (true) {
         switch (self.peek()) {
             ' ', '\r', '\t' => _ = self.advance(),
-            '\n' => return self.makeNewlineToken(.token_whitespace),
+            '\n' => {
+                _ = self.advance();
+                return self.makeToken(.token_whitespace);
+            },
             else => break,
         }
     }
@@ -240,7 +254,8 @@ fn whitespace(self: *Self, c: u8) Token {
 fn system(self: *Self) Token {
     var c = self.peek();
     while (c != 0 and c != '\n') : (c = self.peek()) _ = self.advance();
-    return self.makeNewlineToken(.token_system);
+    if (c == '\n') _ = self.advance();
+    return self.makeToken(.token_system);
 }
 
 fn identifier(self: *Self) Token {
@@ -336,11 +351,7 @@ fn string(self: *Self) Token {
     var len: usize = 0;
     var c = self.peek();
     while (c != 0 and c != '"') : (c = self.peek()) {
-        switch (c) {
-            '\n' => self.line += 1, // TODO: Increment after token creation
-            '\\' => _ = self.advance(),
-            else => {},
-        }
+        if (c == '\\') _ = self.advance();
         _ = self.advance();
         len += 1;
     }
@@ -372,13 +383,6 @@ fn peekNext(self: *Self) u8 {
     return slice[1];
 }
 
-fn makeNewlineToken(self: *Self, token_type: TokenType) Token {
-    defer self.line += 1;
-    defer self.char = 1;
-    _ = self.advance();
-    return self.makeToken(token_type);
-}
-
 fn makeToken(self: *Self, token_type: TokenType) Token {
     return self.token(token_type, self.iterator.bytes[self.start..self.iterator.i], "");
 }
@@ -388,7 +392,6 @@ fn errorToken(self: *Self, message: []const u8) Token {
 }
 
 fn token(self: *Self, token_type: TokenType, lexeme: []const u8, error_message: []const u8) Token {
-    defer self.char += lexeme.len;
     self.prev_token = .{
         .token_type = token_type,
         .lexeme = .{
@@ -399,8 +402,8 @@ fn token(self: *Self, token_type: TokenType, lexeme: []const u8, error_message: 
             .ptr = error_message.ptr,
             .len = error_message.len,
         },
-        .line = self.line,
-        .char = self.char,
+        .line = self.start_line,
+        .char = self.start_char,
     };
     return self.prev_token;
 }
