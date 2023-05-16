@@ -4,12 +4,21 @@ const utils_mod = @import("./utils.zig");
 
 const String = @import("string.zig").String;
 
+const Position = struct {
+    line: u32,
+    character: u32,
+};
+
+const Range = struct {
+    start: Position,
+    end: Position,
+};
+
 pub const Token = struct {
     token_type: TokenType,
     lexeme: String,
     error_message: String,
-    line: u32,
-    char: u32,
+    range: Range,
 };
 
 pub const TokenType = enum(u32) {
@@ -73,9 +82,9 @@ const Self = @This();
 
 start: usize,
 start_line: u32,
-start_char: u32,
-line: u32,
-char: u32,
+start_character: u32,
+end_line: u32,
+end_character: u32,
 prev_token: Token,
 
 iterator: std.unicode.Utf8Iterator,
@@ -85,15 +94,14 @@ pub fn init(source: []const u8) Self {
     return Self{
         .start = 0,
         .start_line = 0,
-        .start_char = 0,
-        .line = 1,
-        .char = 1,
+        .start_character = 0,
+        .end_line = 0,
+        .end_character = 0,
         .prev_token = .{
             .token_type = .token_whitespace,
             .lexeme = undefined,
             .error_message = undefined,
-            .line = undefined,
-            .char = undefined,
+            .range = undefined,
         },
         .iterator = view.iterator(),
     };
@@ -101,14 +109,14 @@ pub fn init(source: []const u8) Self {
 
 pub fn scanToken(self: *Self) ?Token {
     self.start = self.iterator.i;
-    self.start_line = self.line;
-    self.start_char = self.char;
+    self.start_line = self.end_line;
+    self.start_character = self.end_character;
 
     const c = self.advance() orelse return null;
     if (isWhitespace(c)) return self.whitespace(c);
 
     if (c == '/') {
-        if (self.start_char == 1) {
+        if (self.start_character == 0) {
             const next = self.peek();
             if (next == 0 or next == '\n') return self.blockComment(c);
             return self.comment();
@@ -117,7 +125,7 @@ pub fn scanToken(self: *Self) ?Token {
         if (self.prev_token.token_type == .token_whitespace) return self.comment();
     }
 
-    if (c == '\\' and self.start_char == 1) {
+    if (c == '\\' and self.start_character == 0) {
         const next = self.peek();
         if (next == 0 or next == '\n') return self.trailingComment();
         return self.system();
@@ -189,10 +197,10 @@ fn advance(self: *Self) ?u8 {
     const slice = self.iterator.nextCodepointSlice() orelse return null;
     if (slice.len > 1) return null;
     if (slice[0] == '\n') {
-        self.line += 1;
-        self.char = 1;
+        self.end_line += 1;
+        self.end_character = 0;
     } else {
-        self.char += 1;
+        self.end_character += 1;
     }
     return slice[0];
 }
@@ -402,8 +410,16 @@ fn token(self: *Self, token_type: TokenType, lexeme: []const u8, error_message: 
             .ptr = error_message.ptr,
             .len = error_message.len,
         },
-        .line = self.start_line,
-        .char = self.start_char,
+        .range = .{
+            .start = .{
+                .line = self.start_line,
+                .character = self.start_character,
+            },
+            .end = .{
+                .line = self.end_line,
+                .character = self.end_character,
+            },
+        },
     };
     return self.prev_token;
 }

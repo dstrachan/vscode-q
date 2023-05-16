@@ -13,7 +13,9 @@ import {
   DidChangeConfigurationNotification,
   InitializeParams,
   InitializeResult,
+  Position,
   ProposedFeatures,
+  Range,
   TextDocumentPositionParams,
   TextDocuments,
   TextDocumentSyncKind,
@@ -181,12 +183,25 @@ const parseString = (ptr: number) => {
   return decoder.decode(mem);
 };
 
+const parsePosition: (ptr: number) => Position = (ptr: number) => {
+  return {
+    line: parseNumber(ptr),
+    character: parseNumber(ptr + 4),
+  };
+};
+
+const parseRange: (ptr: number) => Range = (ptr: number) => {
+  return {
+    start: parsePosition(ptr),
+    end: parsePosition(ptr + 8),
+  };
+};
+
 type Token = {
   tokenType: string;
   lexeme: string;
   errorMessage: string;
-  line: number;
-  char: number;
+  range: Range;
 };
 
 enum TokenType {
@@ -252,16 +267,14 @@ const parseTokens = (ptr: number, len: number) => {
     const tokenType = TokenType[parseNumber(ptr)];
     const lexeme = parseString(ptr + 4);
     const errorMessage = parseString(ptr + 12);
-    const line = parseNumber(ptr + 20);
-    const char = parseNumber(ptr + 24);
+    const range = parseRange(ptr + 20);
     tokens[i] = {
       tokenType,
       lexeme,
       errorMessage,
-      line,
-      char,
+      range,
     };
-    ptr += 28;
+    ptr += 36;
   }
   return tokens;
 };
@@ -309,6 +322,13 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
 
   let problems = 0;
   const diagnostics: Diagnostic[] = [];
+  for (const token of result.tokens) {
+    const diagnostic: Diagnostic = {
+      range: token.range,
+      message: `this is a test`,
+    };
+    diagnostics.push(diagnostic);
+  }
   while ((m = pattern.exec(text)) && problems < settings.maxNumberOfProblems) {
     problems++;
     const diagnostic: Diagnostic = {
