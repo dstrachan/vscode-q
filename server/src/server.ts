@@ -2,25 +2,24 @@
  * Copyright (c) Microsoft Corporation. All rights reserved.
  * Licensed under the MIT License. See License.txt in the project root for license information.
  * ------------------------------------------------------------------------------------------ */
-import { readFileSync } from 'fs';
-import * as path from 'path';
 import {
   CompletionItem,
   CompletionItemKind,
   createConnection,
   Diagnostic,
-  DiagnosticSeverity,
   DidChangeConfigurationNotification,
   InitializeParams,
   InitializeResult,
-  Position,
   ProposedFeatures,
-  Range,
   TextDocumentPositionParams,
   TextDocuments,
   TextDocumentSyncKind,
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
+
+import { TokenType } from './models';
+import { highlight } from './syntax';
+import { init, parse } from './wasm';
 
 // Create a connection for the server, using Node's IPC as a transport.
 // Also include all preview / proposed LSP features.
@@ -32,30 +31,6 @@ const documents: TextDocuments<TextDocument> = new TextDocuments(TextDocument);
 let hasConfigurationCapability = false;
 let hasWorkspaceFolderCapability = false;
 let hasDiagnosticRelatedInformationCapability = false;
-
-let memory: WebAssembly.Memory;
-let alloc_wasm: (len: number) => number;
-let destroy_wasm: (ptr: number) => void;
-let parse_wasm: (ptr: number, len: number) => number;
-
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
-
-const print = (ptr: number, len: number) => {
-  const mem = new Uint8Array(memory.buffer, ptr, len);
-  console.log(decoder.decode(mem));
-};
-
-const initWasm = () => {
-  const filePath = path.resolve(__dirname, '../../zig-out/lib/parser.wasm');
-  const bytes = readFileSync(filePath);
-  const module = new WebAssembly.Module(bytes);
-  const instance = new WebAssembly.Instance(module, { env: { print } });
-  memory = instance.exports.memory as WebAssembly.Memory;
-  alloc_wasm = instance.exports.alloc as (len: number) => number;
-  destroy_wasm = instance.exports.destroy as (ptr: number) => void;
-  parse_wasm = instance.exports.parse as (ptr: number, len: number) => number;
-};
 
 connection.onInitialize((params: InitializeParams) => {
   const capabilities = params.capabilities;
@@ -91,7 +66,7 @@ connection.onInitialize((params: InitializeParams) => {
     };
   }
 
-  initWasm();
+  init();
 
   return result;
 });
@@ -162,139 +137,11 @@ documents.onDidChangeContent((change) => {
   validateTextDocument(change.document);
 });
 
-const alloc = (data: Uint8Array) => {
-  if (data.length === 0) return 0;
-  const ptr = alloc_wasm(data.length);
-  const mem = new Uint8Array(memory.buffer, ptr, data.length);
-  mem.set(data);
-  return ptr;
-};
-
-const parseNumber = (ptr: number) => {
-  const view = new DataView(memory.buffer, ptr, 4);
-  return view.getUint32(0, true);
-};
-
-const parseString = (ptr: number) => {
-  const view = new DataView(memory.buffer, ptr, 8);
-  const strPtr = view.getUint32(0, true);
-  const len = view.getUint32(4, true);
-  const mem = new Uint8Array(memory.buffer, strPtr, len);
-  return decoder.decode(mem);
-};
-
-const parsePosition: (ptr: number) => Position = (ptr: number) => {
-  return {
-    line: parseNumber(ptr),
-    character: parseNumber(ptr + 4),
-  };
-};
-
-const parseRange: (ptr: number) => Range = (ptr: number) => {
-  return {
-    start: parsePosition(ptr),
-    end: parsePosition(ptr + 8),
-  };
-};
-
-type Token = {
-  tokenType: string;
-  lexeme: string;
-  errorMessage: string;
-  range: Range;
-};
-
-enum TokenType {
-  // Punctuation.
-  token_left_paren,
-  token_right_paren,
-  token_left_brace,
-  token_right_brace,
-  token_left_bracket,
-  token_right_bracket,
-  token_semicolon,
-  token_colon,
-  token_double_colon,
-
-  // Verbs.
-  token_plus,
-  token_minus,
-  token_star,
-  token_percent,
-  token_bang,
-  token_ampersand,
-  token_pipe,
-  token_less,
-  token_greater,
-  token_equal,
-  token_tilde,
-  token_comma,
-  token_caret,
-  token_hash,
-  token_underscore,
-  token_dollar,
-  token_question,
-  token_at,
-  token_dot,
-
-  // Literals.
-  token_bool,
-  token_int,
-  token_float,
-  token_char,
-  token_string,
-  token_symbol,
-  token_identifier,
-
-  // Adverbs.
-  token_apostrophe,
-  token_apostrophe_colon,
-  token_slash,
-  token_slash_colon,
-  token_backslash,
-  token_backslash_colon,
-
-  token_system,
-  token_whitespace,
-  token_comment,
-  token_error,
-  token_eof,
-}
-
-const parseTokens = (ptr: number, len: number) => {
-  const tokens = new Array<Token>(len);
-  for (let i = 0; i < len; i++) {
-    const tokenType = TokenType[parseNumber(ptr)];
-    const lexeme = parseString(ptr + 4);
-    const errorMessage = parseString(ptr + 12);
-    const range = parseRange(ptr + 20);
-    tokens[i] = {
-      tokenType,
-      lexeme,
-      errorMessage,
-      range,
-    };
-    ptr += 36;
-  }
-  return tokens;
-};
-
-const parseTokenResult = (ptr: number) => {
-  const view = new DataView(memory.buffer, ptr, 8);
-  const tokensPtr = view.getUint32(0, true);
-  const len = view.getUint32(4, true);
-
-  return {
-    tokens: parseTokens(tokensPtr, len),
-  };
-};
-
-const parse = (source: string) => {
-  const encodedSource = encoder.encode(source);
-  const sourcePtr = alloc(encodedSource);
-  const ptr = parse_wasm(sourcePtr, encodedSource.length);
-  const result = parseTokenResult(ptr);
-  destroy_wasm(ptr);
+const benchmark = <T>(func: () => T, name: string) => {
+  const start = performance.now();
+  const result = func();
+  const duration = performance.now() - start;
+  console.log(`Duration: ${duration.toFixed(2)} ms (${name})`);
   return result;
 };
 
@@ -305,64 +152,34 @@ async function validateTextDocument(textDocument: TextDocument): Promise<void> {
   // The validator creates diagnostics for all uppercase words length 2 and more
   const text = textDocument.getText();
 
-  const start = performance.now();
-  const result = parse(text);
-  const duration = performance.now() - start;
-  console.log(result, `Duration: ${duration.toFixed(2)} ms`);
+  const tokens = benchmark(() => parse(text), 'parse');
+  benchmark(() => highlight(tokens), 'highlight');
+  console.log(tokens);
 
-  for (let i = 0; i < result.tokens.length; i++) {
-    const token = result.tokens[i];
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
     if (token.tokenType === TokenType[TokenType.token_error]) {
       console.log(token);
     }
   }
 
-  const pattern = /\b[A-Z]{2,}\b/g;
-  let m: RegExpExecArray | null;
-
   let problems = 0;
   const diagnostics: Diagnostic[] = [];
-  for (const token of result.tokens) {
+  for (const token of tokens) {
+    problems++;
+    if (problems > settings.maxNumberOfProblems) break;
     const diagnostic: Diagnostic = {
       range: token.range,
       message: `this is a test`,
     };
-    diagnostics.push(diagnostic);
-  }
-  while ((m = pattern.exec(text)) && problems < settings.maxNumberOfProblems) {
-    problems++;
-    const diagnostic: Diagnostic = {
-      severity: DiagnosticSeverity.Warning,
-      range: {
-        start: textDocument.positionAt(m.index),
-        end: textDocument.positionAt(m.index + m[0].length),
-      },
-      message: `${m[0]} is all uppercase.`,
-      source: 'ex',
-    };
     if (hasDiagnosticRelatedInformationCapability) {
-      diagnostic.relatedInformation = [
-        {
-          location: {
-            uri: textDocument.uri,
-            range: Object.assign({}, diagnostic.range),
-          },
-          message: 'Spelling matters',
-        },
-        {
-          location: {
-            uri: textDocument.uri,
-            range: Object.assign({}, diagnostic.range),
-          },
-          message: 'Particularly for names',
-        },
-      ];
+      diagnostic.relatedInformation = [];
     }
     diagnostics.push(diagnostic);
   }
 
   // Send the computed diagnostics to VSCode.
-  connection.sendDiagnostics({ uri: textDocument.uri, diagnostics });
+  // connection.sendDiagnostics({ uri: textDocument.uri, diagnostics });
 }
 
 connection.onDidChangeWatchedFiles((_change) => {

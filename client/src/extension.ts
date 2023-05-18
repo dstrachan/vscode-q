@@ -4,7 +4,19 @@
  * ------------------------------------------------------------------------------------------ */
 
 import * as path from 'path';
-import { ExtensionContext, workspace } from 'vscode';
+import {
+  DocumentSemanticTokensProvider,
+  ExtensionContext,
+  languages,
+  Position,
+  ProviderResult,
+  Range,
+  SemanticTokens,
+  SemanticTokensBuilder,
+  SemanticTokensLegend,
+  TextDocument,
+  workspace,
+} from 'vscode';
 import {
   LanguageClient,
   LanguageClientOptions,
@@ -12,9 +24,20 @@ import {
   TransportKind,
 } from 'vscode-languageclient/node';
 
+import { TokenType } from './models';
+import { init, parse } from './wasm';
+
 let client: LanguageClient;
 
 export function activate(context: ExtensionContext) {
+  context.subscriptions.push(
+    languages.registerDocumentSemanticTokensProvider(
+      { scheme: 'file', language: 'plaintext' },
+      provider,
+      legend,
+    ),
+  );
+
   // The server is implemented in node
   const serverModule = context.asAbsolutePath(path.join('server', 'out', 'server.js'));
 
@@ -56,3 +79,56 @@ export function deactivate(): Thenable<void> | undefined {
   }
   return client.stop();
 }
+
+const tokenTypes = [
+  'namespace',
+  'parameter',
+  'variable',
+  'function',
+  'comment',
+  'string',
+  'keyword',
+  'number',
+  'operator',
+];
+const tokenModifiers = [
+  'declaration',
+  'definition',
+  'deprecated',
+  'modification',
+  'documentation',
+  'defaultLibrary',
+];
+const legend = new SemanticTokensLegend(tokenTypes, tokenModifiers);
+
+const provider: DocumentSemanticTokensProvider = {
+  provideDocumentSemanticTokens(document: TextDocument): ProviderResult<SemanticTokens> {
+    // analyze the document and return semantic tokens
+
+    const tokensBuilder = new SemanticTokensBuilder(legend);
+    init();
+    const tokens = parse(document.getText());
+    for (const token of tokens.filter(
+      (x) => x.tokenType === TokenType[TokenType.token_comment],
+    )) {
+      if (token.range.isSingleLine) {
+        tokensBuilder.push(token.range, 'comment');
+      } else {
+        for (let i = token.range.start.line; i <= token.range.end.line; i++) {
+          const line = document.lineAt(i);
+          tokensBuilder.push(
+            new Range(new Position(i, 0), new Position(i, line.text.length)),
+            'comment',
+          );
+        }
+      }
+      // tokensBuilder.push(
+      //   token.range.start.line,
+      //   token.range.start.character,
+      //   token.lexeme.length,
+      //   tokenTypes.indexOf('comment'),
+      // );
+    }
+    return tokensBuilder.build();
+  },
+};
