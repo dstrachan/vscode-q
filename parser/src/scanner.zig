@@ -216,7 +216,6 @@ fn match(self: *Self, expected: u8) bool {
 fn comment(self: *Self) Token {
     var c = self.peek();
     while (c != 0 and c != '\n') : (c = self.peek()) _ = self.advance();
-    if (c == '\n') _ = self.advance();
     return self.makeToken(.token_comment);
 }
 
@@ -224,7 +223,7 @@ fn blockComment(self: *Self, c: u8) Token {
     var prev = c;
     var next = self.peek();
     while (next != 0) : (next = self.peek()) {
-        if (next == '\\' and prev == '\n') {
+        if (next == '\\' and prev == '\n' and self.peekNext() == '\n') {
             _ = self.advance();
             break;
         }
