@@ -58,10 +58,10 @@ pub const TokenType = enum(u32) {
     token_bool,
     token_int,
     token_float,
-    token_char,
     token_string,
     token_symbol,
     token_identifier,
+    token_keyword,
 
     // Adverbs.
     token_apostrophe,
@@ -145,7 +145,6 @@ pub fn scanToken(self: *Self) ?Token {
                 .token_bool,
                 .token_int,
                 .token_float,
-                .token_char,
                 .token_string,
                 .token_symbol,
                 .token_right_bracket,
@@ -270,7 +269,7 @@ fn system(self: *Self) Token {
 
 fn identifier(self: *Self) Token {
     while (isAlpha(self.peek()) or isDigit(self.peek())) _ = self.advance();
-    return self.makeToken(.token_identifier);
+    return self.makeToken(if (isKeyword(self.getSlice())) .token_keyword else .token_identifier);
 }
 
 fn negativeNumber(self: *Self) Token {
@@ -358,18 +357,16 @@ fn float(self: *Self) Token {
 }
 
 fn string(self: *Self) Token {
-    var len: usize = 0;
     var c = self.peek();
     while (c != 0 and c != '"') : (c = self.peek()) {
         if (c == '\\') _ = self.advance();
         _ = self.advance();
-        len += 1;
     }
 
     if (self.isAtEnd()) return self.errorToken("Unterminated string.");
 
     _ = self.advance();
-    return self.makeToken(if (len == 1) .token_char else .token_string); // TODO: Do we need token_char?
+    return self.makeToken(.token_string);
 }
 
 fn symbol(self: *Self) Token {
@@ -393,12 +390,16 @@ fn peekNext(self: *Self) u8 {
     return slice[1];
 }
 
+fn getSlice(self: *Self) []const u8 {
+    return self.iterator.bytes[self.start..self.iterator.i];
+}
+
 fn makeToken(self: *Self, token_type: TokenType) Token {
-    return self.token(token_type, self.iterator.bytes[self.start..self.iterator.i], "");
+    return self.token(token_type, self.getSlice(), "");
 }
 
 fn errorToken(self: *Self, message: []const u8) Token {
-    return self.token(.token_error, self.iterator.bytes[self.start..self.iterator.i], message);
+    return self.token(.token_error, self.getSlice(), message);
 }
 
 fn token(self: *Self, token_type: TokenType, lexeme: []const u8, error_message: []const u8) Token {
@@ -424,6 +425,48 @@ fn token(self: *Self, token_type: TokenType, lexeme: []const u8, error_message: 
         },
     };
     return self.prev_token;
+}
+
+fn isKeyword(slice: []const u8) bool {
+    return switch (slice[0]) {
+        'a' => slice.len > 1 and switch (slice[1]) {
+            'b' => slice.len == 3 and slice[2] == 's',
+            'c' => std.mem.eql(u8, "os", slice[2..]),
+            'j' => slice.len == 2 or switch (slice[2]) {
+                '0' => slice.len == 3,
+                'f' => slice.len == 3 or (slice.len == 4 and slice[3] == '0'),
+                else => false,
+            },
+            'l' => slice.len == 3 and slice[2] == 'l',
+            'n' => slice.len == 3 and (slice[2] == 'd' or slice[2] == 'y'),
+            's' => slice.len > 2 and switch (slice[2]) {},
+            't' => false,
+            'v' => false,
+            else => false,
+        },
+        'b' => false,
+        'c' => false,
+        'd' => false,
+        'e' => false,
+        'f' => false,
+        'g' => false,
+        'h' => false,
+        'i' => false,
+        'k' => false,
+        'l' => false,
+        'm' => false,
+        'n' => false,
+        'o' => false,
+        'p' => false,
+        'r' => false,
+        's' => false,
+        't' => false,
+        'u' => false,
+        'v' => false,
+        'w' => false,
+        'x' => false,
+        else => false,
+    };
 }
 
 fn isWhitespace(c: u8) bool {

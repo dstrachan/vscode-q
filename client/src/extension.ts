@@ -24,7 +24,7 @@ import {
   TransportKind,
 } from 'vscode-languageclient/node';
 
-import { TokenType } from './models';
+import { Token, TokenType } from './models';
 import { init, parse } from './wasm';
 
 let client: LanguageClient;
@@ -108,27 +108,77 @@ const provider: DocumentSemanticTokensProvider = {
     const tokensBuilder = new SemanticTokensBuilder(legend);
     init();
     const tokens = parse(document.getText());
-    for (const token of tokens.filter(
-      (x) => x.tokenType === TokenType[TokenType.token_comment],
-    )) {
-      if (token.range.isSingleLine) {
-        tokensBuilder.push(token.range, 'comment');
-      } else {
-        for (let i = token.range.start.line; i <= token.range.end.line; i++) {
-          const line = document.lineAt(i);
-          tokensBuilder.push(
-            new Range(new Position(i, 0), new Position(i, line.text.length)),
-            'comment',
-          );
-        }
-      }
-      // tokensBuilder.push(
-      //   token.range.start.line,
-      //   token.range.start.character,
-      //   token.lexeme.length,
-      //   tokenTypes.indexOf('comment'),
-      // );
+
+    for (const token of tokens) {
+      pushToken(tokensBuilder, document, token, getTokenType(token));
     }
+
     return tokensBuilder.build();
   },
+};
+
+const pushToken = (
+  tokensBuilder: SemanticTokensBuilder,
+  document: TextDocument,
+  token: Token,
+  tokenType: string,
+) => {
+  if (tokenType === '') return;
+  if (token.range.isSingleLine) {
+    tokensBuilder.push(token.range, tokenType);
+  } else {
+    for (let i = token.range.start.line; i <= token.range.end.line; i++) {
+      const line = document.lineAt(i);
+      tokensBuilder.push(
+        new Range(new Position(i, 0), new Position(i, line.text.length)),
+        tokenType,
+      );
+    }
+  }
+};
+
+const getTokenType = (token: Token) => {
+  switch (token.tokenType) {
+    case TokenType[TokenType.token_colon]:
+    case TokenType[TokenType.token_double_colon]:
+    case TokenType[TokenType.token_plus]:
+    case TokenType[TokenType.token_minus]:
+    case TokenType[TokenType.token_star]:
+    case TokenType[TokenType.token_percent]:
+    case TokenType[TokenType.token_bang]:
+    case TokenType[TokenType.token_ampersand]:
+    case TokenType[TokenType.token_pipe]:
+    case TokenType[TokenType.token_less]:
+    case TokenType[TokenType.token_greater]:
+    case TokenType[TokenType.token_equal]:
+    case TokenType[TokenType.token_tilde]:
+    case TokenType[TokenType.token_comma]:
+    case TokenType[TokenType.token_caret]:
+    case TokenType[TokenType.token_hash]:
+    case TokenType[TokenType.token_underscore]:
+    case TokenType[TokenType.token_dollar]:
+    case TokenType[TokenType.token_question]:
+    case TokenType[TokenType.token_at]:
+    case TokenType[TokenType.token_dot]:
+    case TokenType[TokenType.token_apostrophe]:
+    case TokenType[TokenType.token_apostrophe_colon]:
+    case TokenType[TokenType.token_slash]:
+    case TokenType[TokenType.token_slash_colon]:
+    case TokenType[TokenType.token_backslash]:
+    case TokenType[TokenType.token_backslash_colon]:
+      return 'operator';
+    case TokenType[TokenType.token_bool]:
+    case TokenType[TokenType.token_int]:
+    case TokenType[TokenType.token_float]:
+      return 'number';
+    case TokenType[TokenType.token_string]:
+    case TokenType[TokenType.token_symbol]:
+      return 'string';
+    case TokenType[TokenType.token_keyword]:
+      return 'keyword';
+    case TokenType[TokenType.token_comment]:
+      return 'comment';
+    default:
+      return '';
+  }
 };

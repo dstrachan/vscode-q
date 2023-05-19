@@ -37,10 +37,10 @@ export enum TokenType {
   token_bool,
   token_int,
   token_float,
-  token_char,
   token_string,
   token_symbol,
   token_identifier,
+  token_keyword,
 
   // Adverbs.
   token_apostrophe,
