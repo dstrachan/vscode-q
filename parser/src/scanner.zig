@@ -118,7 +118,7 @@ pub fn scanToken(self: *Self) ?Token {
     if (c == '/') {
         if (self.start_character == 0) {
             const next = self.peek();
-            if (next == 0 or next == '\n') return self.blockComment(c);
+            if (next == 0 or next == '\n' or next == '\r') return self.blockComment(c);
             return self.comment();
         }
 
@@ -127,7 +127,7 @@ pub fn scanToken(self: *Self) ?Token {
 
     if (c == '\\' and self.start_character == 0) {
         const next = self.peek();
-        if (next == 0 or next == '\n') return self.trailingComment();
+        if (next == 0 or next == '\n' or next == '\r') return self.trailingComment();
         return self.system();
     }
 
@@ -215,7 +215,7 @@ fn match(self: *Self, expected: u8) bool {
 
 fn comment(self: *Self) Token {
     var c = self.peek();
-    while (c != 0 and c != '\n') : (c = self.peek()) _ = self.advance();
+    while (c != 0 and c != '\n' and c != '\r') : (c = self.peek()) _ = self.advance();
     return self.makeToken(.token_comment);
 }
 
@@ -223,9 +223,12 @@ fn blockComment(self: *Self, c: u8) Token {
     var prev = c;
     var next = self.peek();
     while (next != 0) : (next = self.peek()) {
-        if (next == '\\' and prev == '\n' and self.peekNext() == '\n') {
-            _ = self.advance();
-            break;
+        if (next == '\\' and prev == '\n') {
+            const p = self.peekNext();
+            if (p == '\n' or p == '\r') {
+                _ = self.advance();
+                break;
+            }
         }
 
         _ = self.advance();
