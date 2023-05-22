@@ -166,7 +166,7 @@ const getTokenType = (token: Token) => {
     case TokenType[TokenType.token_slash_colon]:
     case TokenType[TokenType.token_backslash]:
     case TokenType[TokenType.token_backslash_colon]:
-      return 'operator';
+      return 'function';
     case TokenType[TokenType.token_bool]:
     case TokenType[TokenType.token_int]:
     case TokenType[TokenType.token_float]:
@@ -174,8 +174,12 @@ const getTokenType = (token: Token) => {
     case TokenType[TokenType.token_string]:
     case TokenType[TokenType.token_symbol]:
       return 'string';
+    case TokenType[TokenType.token_identifier]:
+      return 'variable';
     case TokenType[TokenType.token_keyword]:
       return 'keyword';
+    case TokenType[TokenType.token_system]:
+      return 'function';
     case TokenType[TokenType.token_comment]:
       return 'comment';
     default:

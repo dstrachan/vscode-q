@@ -131,7 +131,7 @@ pub fn scanToken(self: *Self) ?Token {
         return self.system();
     }
 
-    if (isAlpha(c)) return self.identifier();
+    if (isIdentifierAlpha(c)) return self.identifier();
     if (isDigit(c)) return self.number(c);
     if (c == '.' and isDigit(self.peek())) return self.float();
     if (c == '-') {
@@ -263,13 +263,14 @@ fn whitespace(self: *Self, c: u8) Token {
 fn system(self: *Self) Token {
     var c = self.peek();
     while (c != 0 and c != '\n') : (c = self.peek()) _ = self.advance();
-    if (c == '\n') _ = self.advance();
     return self.makeToken(.token_system);
 }
 
 fn identifier(self: *Self) Token {
     while (isAlpha(self.peek()) or isDigit(self.peek())) _ = self.advance();
-    return self.makeToken(if (isKeyword(self.getSlice())) .token_keyword else .token_identifier);
+    const slice = self.getSlice();
+    if (slice.len == 1 and slice[0] == '.') return self.makeToken(.token_dot);
+    return self.makeToken(if (isKeyword(slice)) .token_keyword else .token_identifier);
 }
 
 fn negativeNumber(self: *Self) Token {
@@ -428,8 +429,10 @@ fn token(self: *Self, token_type: TokenType, lexeme: []const u8, error_message: 
 }
 
 fn isKeyword(slice: []const u8) bool {
+    if (slice.len <= 1) return false;
+
     return switch (slice[0]) {
-        'a' => slice.len > 1 and switch (slice[1]) {
+        'a' => switch (slice[1]) {
             'b' => slice.len == 3 and slice[2] == 's',
             'c' => std.mem.eql(u8, "os", slice[2..]),
             'j' => slice.len == 2 or switch (slice[2]) {
@@ -439,32 +442,342 @@ fn isKeyword(slice: []const u8) bool {
             },
             'l' => slice.len == 3 and slice[2] == 'l',
             'n' => slice.len == 3 and (slice[2] == 'd' or slice[2] == 'y'),
-            's' => slice.len > 2 and switch (slice[2]) {},
-            't' => false,
-            'v' => false,
+            's' => slice.len > 2 and switch (slice[2]) {
+                'c' => slice.len == 3,
+                'i' => slice.len == 4 and slice[3] == 'n',
+                'o' => slice.len == 4 and slice[3] == 'f',
+                else => false,
+            },
+            't' => slice.len > 2 and switch (slice[2]) {
+                'a' => slice.len == 4 and slice[3] == 'n',
+                't' => slice.len == 4 and slice[3] == 'r',
+                else => false,
+            },
+            'v' => slice.len > 2 and switch (slice[2]) {
+                'g' => slice.len == 3 or (slice.len == 4 and slice[3] == 's'),
+                else => false,
+            },
             else => false,
         },
-        'b' => false,
-        'c' => false,
-        'd' => false,
-        'e' => false,
-        'f' => false,
-        'g' => false,
-        'h' => false,
-        'i' => false,
-        'k' => false,
-        'l' => false,
-        'm' => false,
-        'n' => false,
-        'o' => false,
-        'p' => false,
-        'r' => false,
-        's' => false,
-        't' => false,
-        'u' => false,
-        'v' => false,
-        'w' => false,
-        'x' => false,
+        'b' => slice.len > 2 and switch (slice[1]) {
+            'i' => switch (slice[2]) {
+                'n' => slice.len == 3 or (slice.len == 4 and slice[3] == 'r'),
+                else => false,
+            },
+            else => false,
+        },
+        'c' => switch (slice[1]) {
+            'e' => std.mem.eql(u8, "iling", slice[2..]),
+            'o' => slice.len > 2 and switch (slice[2]) {
+                'l' => slice.len == 4 and slice[3] == 's',
+                'r' => slice.len == 3,
+                's' => slice.len == 3,
+                'u' => std.mem.eql(u8, "nt", slice[3..]),
+                'v' => slice.len == 3,
+                else => false,
+            },
+            'r' => std.mem.eql(u8, "oss", slice[2..]),
+            's' => slice.len == 3 and slice[2] == 'v',
+            'u' => slice.len == 3 and slice[2] == 't',
+            else => false,
+        },
+        'd' => switch (slice[1]) {
+            'e' => slice.len > 2 and switch (slice[2]) {
+                'l' => slice.len == 6 and switch (slice[3]) {
+                    'e' => std.mem.eql(u8, "te", slice[4..]),
+                    't' => std.mem.eql(u8, "as", slice[4..]),
+                    else => false,
+                },
+                's' => slice.len == 4 and slice[3] == 'c',
+                'v' => slice.len == 3,
+                else => false,
+            },
+            'i' => slice.len > 2 and switch (slice[2]) {
+                'f' => std.mem.eql(u8, "fer", slice[3..]),
+                's' => std.mem.eql(u8, "tinct", slice[3..]),
+                'v' => slice.len == 3,
+                else => false,
+            },
+            'o' => slice.len == 2,
+            's' => std.mem.eql(u8, "ave", slice[2..]),
+            else => false,
+        },
+        'e' => switch (slice[1]) {
+            'a' => std.mem.eql(u8, "ch", slice[2..]),
+            'j' => slice.len == 2,
+            'm' => slice.len == 3 and slice[2] == 'a',
+            'n' => std.mem.eql(u8, "list", slice[2..]),
+            'v' => std.mem.eql(u8, "al", slice[2..]),
+            'x' => slice.len > 2 and switch (slice[2]) {
+                'c' => std.mem.eql(u8, "ept", slice[3..]),
+                'e' => slice.len == 4 and slice[3] == 'c',
+                'i' => slice.len == 4 and slice[3] == 't',
+                'p' => slice.len == 3,
+                else => false,
+            },
+            else => false,
+        },
+        'f' => switch (slice[1]) {
+            'b' => slice.len == 3 and slice[2] == 'y',
+            'i' => slice.len == 5 and switch (slice[2]) {
+                'l' => std.mem.eql(u8, "ls", slice[3..]),
+                'r' => std.mem.eql(u8, "st", slice[3..]),
+                else => false,
+            },
+            'k' => std.mem.eql(u8, "eys", slice[2..]),
+            'l' => slice.len > 2 and switch (slice[2]) {
+                'i' => slice.len == 4 and slice[3] == 'p',
+                'o' => std.mem.eql(u8, "or", slice[3..]),
+                else => false,
+            },
+            else => false,
+        },
+        'g' => switch (slice[1]) {
+            'e' => slice.len > 2 and switch (slice[2]) {
+                't' => slice.len == 3 or std.mem.eql(u8, "env", slice[3..]),
+                else => false,
+            },
+            'r' => std.mem.eql(u8, "oup", slice[2..]),
+            't' => std.mem.eql(u8, "ime", slice[2..]),
+            else => false,
+        },
+        'h' => switch (slice[1]) {
+            'c' => slice.len == 6 and switch (slice[2]) {
+                'l' => std.mem.eql(u8, "ose", slice[3..]),
+                'o' => std.mem.eql(u8, "unt", slice[3..]),
+                else => false,
+            },
+            'd' => std.mem.eql(u8, "el", slice[2..]),
+            'o' => std.mem.eql(u8, "pen", slice[2..]),
+            's' => std.mem.eql(u8, "ym", slice[2..]),
+            else => false,
+        },
+        'i' => switch (slice[1]) {
+            'a' => std.mem.eql(u8, "sc", slice[2..]),
+            'd' => std.mem.eql(u8, "esc", slice[2..]),
+            'f' => slice.len == 2,
+            'j' => slice.len == 2 or (slice.len == 3 and slice[2] == 'f'),
+            'n' => slice.len == 2 or switch (slice[2]) {
+                's' => std.mem.eql(u8, "ert", slice[3..]),
+                't' => std.mem.eql(u8, "er", slice[3..]),
+                'v' => slice.len == 3,
+                else => false,
+            },
+            else => false,
+        },
+        'k' => switch (slice[1]) {
+            'e' => slice.len > 2 and switch (slice[2]) {
+                'y' => slice.len == 3 or (slice.len == 4 and slice[3] == 's'),
+                else => false,
+            },
+            else => false,
+        },
+        'l' => switch (slice[1]) {
+            'a' => std.mem.eql(u8, "st", slice[2..]),
+            'i' => std.mem.eql(u8, "ke", slice[2..]),
+            'j' => slice.len == 2 or (slice.len == 3 and slice[2] == 'f'),
+            'o' => slice.len > 2 and switch (slice[2]) {
+                'a' => slice.len == 4 and slice[3] == 'd',
+                'g' => slice.len == 3,
+                'w' => std.mem.eql(u8, "er", slice[3..]),
+                else => false,
+            },
+            's' => slice.len == 3 and slice[2] == 'q',
+            't' => slice.len == 5 and switch (slice[2]) {
+                'i' => std.mem.eql(u8, "me", slice[3..]),
+                'r' => std.mem.eql(u8, "im", slice[3..]),
+                else => false,
+            },
+            else => false,
+        },
+        'm' => switch (slice[1]) {
+            'a' => slice.len > 2 and switch (slice[2]) {
+                'v' => slice.len == 4 and slice[3] == 'g',
+                'x' => slice.len == 3 or (slice.len == 4 and slice[3] == 's'),
+                else => false,
+            },
+            'c' => std.mem.eql(u8, "ount", slice[2..]),
+            'd' => slice.len > 2 and switch (slice[2]) {
+                '5' => slice.len == 3,
+                'e' => slice.len == 4 and slice[3] == 'v',
+                else => false,
+            },
+            'e' => slice.len > 2 and switch (slice[2]) {
+                'd' => slice.len == 3,
+                't' => slice.len == 4 and slice[3] == 'a',
+                else => false,
+            },
+            'i' => slice.len > 2 and switch (slice[2]) {
+                'n' => slice.len == 3 or (slice.len == 4 and slice[3] == 's'),
+                else => false,
+            },
+            'm' => slice.len > 2 and switch (slice[2]) {
+                'a' => slice.len == 4 and slice[3] == 'x',
+                'i' => slice.len == 4 and slice[3] == 'n',
+                'u' => slice.len == 3,
+                else => false,
+            },
+            'o' => slice.len == 3 and slice[2] == 'd',
+            's' => std.mem.eql(u8, "um", slice[2..]),
+            else => false,
+        },
+        'n' => switch (slice[1]) {
+            'e' => slice.len > 2 and switch (slice[2]) {
+                'g' => slice.len == 3,
+                'x' => slice.len == 4 and slice[3] == 't',
+                else => false,
+            },
+            'o' => slice.len == 3 and slice[2] == 't',
+            'u' => std.mem.eql(u8, "ll", slice[2..]),
+            else => false,
+        },
+        'o' => switch (slice[1]) {
+            'r' => slice.len == 2,
+            'v' => std.mem.eql(u8, "er", slice[2..]),
+            else => false,
+        },
+        'p' => switch (slice[1]) {
+            'a' => std.mem.eql(u8, "rse", slice[2..]),
+            'e' => std.mem.eql(u8, "ach", slice[2..]),
+            'j' => slice.len == 2,
+            'r' => slice.len > 2 and switch (slice[2]) {
+                'd' => slice.len == 3 or (slice.len == 4 and slice[3] == 's'),
+                'e' => slice.len == 4 and slice[3] == 'v',
+                'i' => std.mem.eql(u8, "or", slice[3..]),
+                else => false,
+            },
+            else => false,
+        },
+        'r' => switch (slice[1]) {
+            'a' => slice.len > 2 and switch (slice[2]) {
+                'n' => slice.len == 4 and (slice[3] == 'd' or slice[3] == 'k'),
+                't' => std.mem.eql(u8, "ios", slice[3..]),
+                'z' => slice.len == 4 and slice[3] == 'e',
+                else => false,
+            },
+            'e' => slice.len > 2 and switch (slice[2]) {
+                'a' => slice.len == 5 and switch (slice[3]) {
+                    'd' => slice[4] == '0' or slice[4] == '1',
+                    else => false,
+                },
+                'c' => std.mem.eql(u8, "iprocal", slice[3..]),
+                'v' => slice.len > 4 and switch (slice[3]) {
+                    'a' => slice.len == 5 and slice[4] == 'l',
+                    'e' => std.mem.eql(u8, "rse", slice[4..]),
+                    else => false,
+                },
+                else => false,
+            },
+            'l' => std.mem.eql(u8, "oad", slice[2..]),
+            'o' => std.mem.eql(u8, "tate", slice[2..]),
+            's' => std.mem.eql(u8, "ave", slice[2..]),
+            't' => std.mem.eql(u8, "rim", slice[2..]),
+            else => false,
+        },
+        's' => switch (slice[1]) {
+            'a' => std.mem.eql(u8, "ve", slice[2..]),
+            'c' => slice.len > 2 and switch (slice[2]) {
+                'a' => slice.len == 4 and slice[3] == 'n',
+                'o' => slice.len == 4 and slice[3] == 'v',
+                else => false,
+            },
+            'd' => std.mem.eql(u8, "ev", slice[2..]),
+            'e' => slice.len > 2 and switch (slice[2]) {
+                'l' => std.mem.eql(u8, "ect", slice[3..]),
+                't' => slice.len == 3 or std.mem.eql(u8, "env", slice[3..]),
+                else => false,
+            },
+            'h' => std.mem.eql(u8, "ow", slice[2..]),
+            'i' => slice.len > 2 and switch (slice[2]) {
+                'g' => std.mem.eql(u8, "num", slice[3..]),
+                'n' => slice.len == 3,
+                else => false,
+            },
+            'q' => std.mem.eql(u8, "rt", slice[2..]),
+            's' => slice.len == 2 or (slice.len == 3 and slice[2] == 'r'),
+            't' => std.mem.eql(u8, "ring", slice[2..]),
+            'u' => slice.len > 2 and switch (slice[2]) {
+                'b' => std.mem.eql(u8, "list", slice[3..]),
+                'm' => slice.len == 3 or (slice.len == 4 and slice[3] == 's'),
+                else => false,
+            },
+            'v' => slice.len == 2 or std.mem.eql(u8, "ar", slice[2..]),
+            'y' => std.mem.eql(u8, "stem", slice[2..]),
+            else => false,
+        },
+        't' => switch (slice[1]) {
+            'a' => slice.len > 2 and switch (slice[2]) {
+                'b' => std.mem.eql(u8, "les", slice[3..]),
+                'n' => slice.len == 3,
+                else => false,
+            },
+            'i' => slice.len == 3 and slice[2] == 'l',
+            'r' => std.mem.eql(u8, "im", slice[2..]),
+            'y' => std.mem.eql(u8, "pe", slice[2..]),
+            else => false,
+        },
+        'u' => switch (slice[1]) {
+            'j' => slice.len == 2 or (slice.len == 3 and slice[2] == 'f'),
+            'n' => slice.len > 2 and switch (slice[2]) {
+                'g' => std.mem.eql(u8, "roup", slice[3..]),
+                'i' => std.mem.eql(u8, "on", slice[3..]),
+                else => false,
+            },
+            'p' => slice.len > 2 and switch (slice[2]) {
+                'd' => std.mem.eql(u8, "ate", slice[3..]),
+                'p' => std.mem.eql(u8, "er", slice[3..]),
+                's' => std.mem.eql(u8, "ert", slice[3..]),
+                else => false,
+            },
+            else => false,
+        },
+        'v' => switch (slice[1]) {
+            'a' => slice.len > 2 and switch (slice[2]) {
+                'l' => std.mem.eql(u8, "ue", slice[3..]),
+                'r' => slice.len == 3,
+                else => false,
+            },
+            'i' => slice.len > 2 and switch (slice[2]) {
+                'e' => slice.len > 3 and switch (slice[3]) {
+                    'w' => slice.len == 4 or (slice.len == 5 and slice[4] == 's'),
+                    else => false,
+                },
+                else => false,
+            },
+            's' => slice.len == 2,
+            else => false,
+        },
+        'w' => switch (slice[1]) {
+            'a' => std.mem.eql(u8, "vg", slice[2..]),
+            'h' => slice.len > 2 and switch (slice[2]) {
+                'e' => std.mem.eql(u8, "re", slice[3..]),
+                'i' => std.mem.eql(u8, "le", slice[3..]),
+                else => false,
+            },
+            'i' => std.mem.eql(u8, "thin", slice[2..]),
+            'j' => slice.len == 2 or (slice.len == 3 and slice[2] == '1'),
+            's' => std.mem.eql(u8, "um", slice[2..]),
+            else => false,
+        },
+        'x' => switch (slice[1]) {
+            'a' => std.mem.eql(u8, "sc", slice[2..]),
+            'b' => std.mem.eql(u8, "ar", slice[2..]),
+            'c' => slice.len > 3 and switch (slice[2]) {
+                'o' => switch (slice[3]) {
+                    'l' => slice.len == 4 or (slice.len == 5 and slice[4] == 's'),
+                    else => false,
+                },
+                else => false,
+            },
+            'd' => std.mem.eql(u8, "esc", slice[2..]),
+            'e' => std.mem.eql(u8, "xp", slice[2..]),
+            'g' => std.mem.eql(u8, "roup", slice[2..]),
+            'k' => std.mem.eql(u8, "ey", slice[2..]),
+            'l' => std.mem.eql(u8, "og", slice[2..]),
+            'p' => std.mem.eql(u8, "rev", slice[2..]),
+            'r' => std.mem.eql(u8, "ank", slice[2..]),
+            else => false,
+        },
         else => false,
     };
 }
@@ -476,9 +789,16 @@ fn isWhitespace(c: u8) bool {
     };
 }
 
+fn isIdentifierAlpha(c: u8) bool {
+    return switch (c) {
+        'a'...'z', 'A'...'Z', '.' => true,
+        else => false,
+    };
+}
+
 fn isAlpha(c: u8) bool {
     return switch (c) {
-        'a'...'z', 'A'...'Z', '_' => true,
+        'a'...'z', 'A'...'Z', '.', '_' => true,
         else => false,
     };
 }
